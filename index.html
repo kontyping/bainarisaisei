@@ -2,167 +2,290 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <title>レトロドット風・魔改造プレイヤー</title>
+    <title>レトロドット・プレイヤー ＆ MP4コンバーター</title>
     <style>
         body { font-family: sans-serif; text-align: center; margin-top: 30px; background: #0b0b0b; color: #fff; }
-        .box { background: #161616; padding: 30px; border-radius: 12px; display: inline-block; box-shadow: 0 4px 20px rgba(0,0,0,0.8); border: 1px solid #333; }
-        input[type="file"], input[type="range"] { margin: 10px 0; width: 100%; }
-        button { margin: 5px; padding: 10px 20px; font-size: 16px; background: #0984e3; color: white; border: none; cursor: pointer; border-radius: 6px; font-weight: bold; }
+        .box { background: #161616; padding: 30px; border-radius: 12px; display: inline-block; box-shadow: 0 4px 20px rgba(0,0,0,0.8); border: 1px solid #333; max-width: 550px; width: 100%; box-sizing: border-box; }
+        input, button, select { margin: 10px 0; padding: 10px; font-size: 16px; width: 100%; box-sizing: border-box; }
+        button { background: #0984e3; color: white; border: none; cursor: pointer; border-radius: 6px; font-weight: bold; }
         button:hover { background: #74b9ff; }
-        .stop-btn { background: #d63031 !important; }
-        .stop-btn:hover { background: #ff7675 !important; }
+        button.accent { background: #00b894; }
+        button.accent:hover { background: #55efc4; }
         
-        /* 画面表示用Canvas (レトロな雰囲気を出すためにシャープに描画) */
         #playerCanvas { 
             background: #000; 
             border: 6px solid #222; 
             border-radius: 4px;
-            margin-top: 20px; 
-            width: 480px; 
-            height: 360px; 
+            margin-top: 15px; 
+            width: 320px; 
+            height: 240px; 
             image-rendering: pixelated;
             image-rendering: crisp-edges;
+            object-fit: contain;
+        }
+        /* フルスクリーン時のスタイル調整 */
+        #playerCanvas:fullscreen {
+            width: 100vw;
+            height: 100vh;
+            border: none;
+            background: #000;
         }
         
-        #status { margin-top: 10px; color: #00cec9; font-size: 14px; font-family: monospace; }
-        .slider-container { background: #222; padding: 15px; border-radius: 8px; margin-top: 15px; text-align: left; }
-        label { font-size: 14px; color: #bbb; }
+        #status { margin-top: 10px; color: #fdcb6e; font-size: 14px; font-family: monospace; word-break: break-all; }
+        .control-group { text-align: left; background: #222; padding: 15px; border-radius: 8px; margin-top: 10px; }
+        label { font-size: 14px; color: #bbb; display: block; margin-bottom: 5px; }
+        audio { display: none; }
     </style>
 </head>
 <body>
-    <div class="box">
+    <div class="box" id="playerBox">
         <h1>RETRO DOT PLAYER</h1>
-        <p>テキストデータを選んでレトロゲーム風に再生</p>
+        <p>ドットテキスト ＆ MP3音声で再生・MP4書き出し</p>
         
-        <input type="file" id="dataFile" accept=".txt"><br>
+        <div class="control-group">
+            <label>1. ドットテキストファイル (.txt):</label>
+            <input type="file" id="textFile" accept=".txt">
+            
+            <label>2. 音声ファイル (.mp3):</label>
+            <input type="file" id="audioFile" accept="audio/*">
+
+            <label>3. 再生フレームレート (FPS):</label>
+            <select id="fpsSelect">
+                <option value="1">1 fps</option>
+                <option value="5">5 fps</option>
+                <option value="10" selected>10 fps</option>
+                <option value="15">15 fps</option>
+                <option value="30">30 fps</option>
+                <option value="60">60 fps</option>
+            </select>
+        </div>
+
+        <button onclick="playRetro()" class="accent">▶ 再生する</button>
+        <button onclick="toggleFullScreen()">⤢ フルスクリーンで見る</button>
+        <button onclick="exportToMP4()">💾 MP4動画として書き出し・ダウンロード</button>
         
+        <div id="status">ファイルをすべて選択してください</div>
+        
+        <!-- 再生用Canvas (内部解像度 160x120) -->
         <div>
-            <button onclick="startPlayback()">再生</button>
-            <button class="stop-btn" onclick="stopPlayback()">停止</button>
+            <canvas id="playerCanvas" width="160" height="120"></canvas>
         </div>
-
-        <div class="slider-container">
-            <label>再生スピード (FPS): <span id="fpsValue">10</span> fps</label>
-            <input type="range" id="fpsSlider" min="0.5" max="30" step="0.5" value="10" oninput="updateFps(this.value)">
-        </div>
-
-        <div id="status">ファイル未選択</div>
-        
-        <!-- 描画用Canvas（内部解像度を160x120にして、CSSで拡大） -->
-        <canvas id="playerCanvas" width="160" height="120"></canvas>
     </div>
 
-    <script>
-        let frames = [];
-        let currentFrame = 0;
-        let isPlaying = false;
-        let lastTime = 0;
-        let accumulator = 0;
-        let currentFps = 10;
+    <audio id="audioPlayer"></audio>
 
+    <script>
         const width = 160;
         const height = 120;
         const canvas = document.getElementById('playerCanvas');
         const ctx = canvas.getContext('2d');
+        const audio = document.getElementById('audioPlayer');
         const statusDiv = document.getElementById('status');
-        const fpsValueSpan = document.getElementById('fpsValue');
 
-        // ファイル読み込み
-        document.getElementById('dataFile').addEventListener('change', function(e) {
-            const file = e.target.files[0];
-            if (!file) return;
+        let frames = [];
+        let isLoaded = false;
+        let animationId = null;
 
-            statusDiv.innerText = "データを読み込んでいます...";
-            const reader = new FileReader();
-            reader.onload = function(event) {
-                const text = event.target.result;
-                frames = text.split('\n').filter(line => line.length > 0);
-                statusDiv.innerText = `読み込み完了！ (全 ${frames.length} フレーム)`;
-                currentFrame = 0;
-                drawFrame(0);
-            };
-            reader.readAsText(file);
-        });
+        // ファイル選択時の読み込み処理
+        async function loadFiles() {
+            const textFile = document.getElementById('textFile').files[0];
+            const audioFile = document.getElementById('audioFile').files[0];
 
-        // スライダーでFPSを変更
-        function updateFps(val) {
-            currentFps = parseFloat(val);
-            fpsValueSpan.innerText = currentFps;
+            if (!textFile || !audioFile) return;
+
+            statusDiv.innerText = "データを読み込み中...";
+
+            // テキスト読み込み
+            const textData = await textFile.text();
+            frames = textData.split('\n').filter(line => line.length > 0);
+
+            // 音声読み込み
+            audio.src = URL.createObjectURL(audioFile);
+
+            isLoaded = true;
+            statusDiv.innerText = `準備完了！ (全 ${frames.length} フレーム)`;
+            drawFrame(0); // 最初のフレームを表示
         }
 
-        // 1フレームを「すきま空きドット」風に描画する関数
-        function drawFrame(index) {
-            if (frames.length === 0 || index >= frames.length) return;
+        document.getElementById('textFile').addEventListener('change', loadFiles);
+        document.getElementById('audioFile').addEventListener('change', loadFiles);
 
-            const frameData = frames[index];
-            
-            // 1. まず画面全体を完全に黒で塗りつぶす（これが隙間のベースになる）
+        // 1フレームを描画する関数
+        function drawFrame(frameIndex) {
+            if (!frames[frameIndex]) return;
+            const line = frames[frameIndex];
+
             ctx.fillStyle = '#000000';
             ctx.fillRect(0, 0, width, height);
 
-            // 2. 1ドットずつ「少し小さめ」に四角を描画する
-            for (let i = 0; i < frameData.length; i++) {
-                const char = frameData[i];
-                const level = parseInt(char, 10) || 0;
-                
-                // レベル0（完全に黒）は何もしない（隙間として黒を残す）
-                if (level === 0) continue;
+            for (let i = 0; i < line.length; i++) {
+                const val = parseInt(line[i], 10);
+                if (val === 0) continue;
 
                 const x = i % width;
                 const y = Math.floor(i / width);
 
-                // 濃淡（0〜9）を明度に変換（レベル1〜9を明るさに割り当て）
-                const val = Math.floor((level / 9) * 230) + 25; // 最小でも少し明るく
-                ctx.fillStyle = `rgb(${val}, ${val}, ${val})`;
-
-                // 【ここがポイント！】 1x1 のサイズではなく、少し縮めたサイズ（例: 0.8x0.8）で描画する
-                // これにより、ドットの周りにわずかな隙間が生まれ、レトロなグリッド感がでる
+                const colorVal = Math.floor((val / 9) * 230) + 25;
+                ctx.fillStyle = `rgb(${colorVal}, ${colorVal}, ${colorVal})`;
                 ctx.fillRect(x + 0.1, y + 0.1, 0.8, 0.8);
             }
-
-            statusDiv.innerText = `PLAYING: ${index + 1} / ${frames.length} [${currentFps}fps]`;
         }
 
-        // デルタタイム制御のループ
-        function loop(timestamp) {
-            if (!isPlaying) return;
-
-            if (!lastTime) lastTime = timestamp;
-            const deltaTime = (timestamp - lastTime) / 1000;
-            lastTime = timestamp;
-
-            accumulator += deltaTime;
-            const frameInterval = 1 / currentFps;
-
-            while (accumulator >= frameInterval) {
-                accumulator -= frameInterval;
-                currentFrame++;
-                
-                if (currentFrame >= frames.length) {
-                    currentFrame = 0;
-                }
-                drawFrame(currentFrame);
-            }
-
-            requestAnimationFrame(loop);
-        }
-
-        function startPlayback() {
-            if (frames.length === 0) {
-                alert('先にテキストファイルを選んでください！');
+        // 再生処理（音声と同期）
+        function playRetro() {
+            if (!isLoaded) {
+                alert('先にテキストと音声ファイルを選択してください！');
                 return;
             }
-            if (isPlaying) return;
 
-            isPlaying = true;
-            lastTime = 0;
-            accumulator = 0;
-            requestAnimationFrame(loop);
+            stopPlayback();
+
+            const fps = parseFloat(document.getElementById('fpsSelect').value);
+            const interval = 1000 / fps;
+
+            audio.currentTime = 0;
+            audio.play();
+
+            let startTime = performance.now();
+            let lastFrameIndex = -1;
+
+            function update(now) {
+                if (audio.paused || audio.ended) {
+                    stopPlayback();
+                    return;
+                }
+
+                // 音声の再生位置を基準にしてフレームを計算（音ズレ防止）
+                const currentTime = audio.currentTime;
+                const currentFrame = Math.floor(currentTime * fps);
+
+                if (currentFrame !== lastFrameIndex && currentFrame < frames.length) {
+                    drawFrame(currentFrame);
+                    lastFrameIndex = currentFrame;
+                }
+
+                if (currentFrame < frames.length) {
+                    animationId = requestAnimationFrame(update);
+                } else {
+                    stopPlayback();
+                }
+            }
+
+            animationId = requestAnimationFrame(update);
+            statusDiv.innerText = "再生中...";
         }
 
         function stopPlayback() {
-            isPlaying = false;
-            statusDiv.innerText = "STOPPED";
+            if (animationId) {
+                cancelAnimationFrame(animationId);
+                animationId = null;
+            }
+            if (!audio.paused) {
+                audio.pause();
+            }
+        }
+
+        // フルスクリーン切り替え
+        function toggleFullScreen() {
+            if (!document.fullscreenElement) {
+                canvas.requestFullscreen().catch(err => {
+                    alert(`フルスクリーンエラー: ${err.message}`);
+                });
+            } else {
+                document.exitFullscreen();
+            }
+        }
+
+        // MP4（WebM/MP4）動画として書き出してダウンロードする機能
+        async function exportToMP4() {
+            if (!isLoaded) {
+                alert('先にテキストと音声ファイルを選択してください！');
+                return;
+            }
+
+            if (!window.MediaRecorder) {
+                alert('お使いのブラウザは動画の録画・書き出しに対応していません。');
+                return;
+            }
+
+            stopPlayback();
+            statusDiv.innerText = "MP4動画の書き出しを準備中...";
+
+            const fps = parseFloat(document.getElementById('fpsSelect').value);
+            const frameIntervalMs = 1000 / fps;
+
+            // Canvasの映像と音声ストリームを結合
+            const canvasStream = canvas.captureStream(fps);
+            
+            // 音声をストリームに追加するため、Audio要素からMediaStreamを生成
+            const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            const source = audioCtx.createMediaElementSource(audio);
+            const destination = audioCtx.createMediaStreamDestination();
+            source.connect(destination);
+            source.connect(audioCtx.destination); // スピーカーでも聞こえるようにする
+
+            // ビデオとオーディオのストリームをマージ
+            const combinedStream = new MediaStream([
+                ...canvasStream.getVideoTracks(),
+                ...destination.stream.getAudioTracks()
+            ]);
+
+            // ブラウザがサポートしているMIMEタイプを選択
+            let mimeType = 'video/mp4';
+            if (!MediaRecorder.isTypeSupported(mimeType)) {
+                mimeType = 'video/webm;codecs=h264';
+                if (!MediaRecorder.isTypeSupported(mimeType)) {
+                    mimeType = 'video/webm';
+                }
+            }
+
+            let recorder;
+            try {
+                recorder = new MediaRecorder(combinedStream, { mimeType: mimeType });
+            } catch (e) {
+                recorder = new MediaRecorder(combinedStream);
+            }
+
+            const chunks = [];
+            recorder.ondataavailable = (e) => {
+                if (e.data.size > 0) chunks.push(e.data);
+            };
+
+            recorder.onstop = () => {
+                const blob = new Blob(chunks, { type: recorder.mimeType });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                // 拡張子はコンテナに合わせて自動調整
+                const ext = recorder.mimeType.includes('mp4') ? 'mp4' : 'webm';
+                a.download = `retro_dot_video.${ext}`;
+                a.click();
+                statusDiv.innerText = `動画の書き出しが完了しました！ (${ext}形式)`;
+            };
+
+            // 録画開始
+            recorder.start();
+            audio.currentTime = 0;
+            audio.play();
+
+            let currentIdx = 0;
+            statusDiv.innerText = `動画書き出し中... (0 / ${frames.length} フレーム)`;
+
+            // フレームを正確な速度でCanvasに流し込みながら録画する
+            const exportInterval = setInterval(() => {
+                if (currentIdx >= frames.length || audio.ended) {
+                    clearInterval(exportInterval);
+                    audio.pause();
+                    setTimeout(() => {
+                        recorder.stop();
+                    }, 500); // 最後のフレームが確実に記録されるよう少し待つ
+                    return;
+                }
+
+                drawFrame(currentIdx);
+                statusDiv.innerText = `動画書き出し中... (${currentIdx + 1} / ${frames.length} フレーム)`;
+                currentIdx++;
+            }, frameIntervalMs);
         }
     </script>
 </body>
