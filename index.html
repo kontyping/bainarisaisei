@@ -2,42 +2,60 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <title>Bad Apple 再生プレイヤー</title>
+    <title>魔改造・スピード可変プレイヤー</title>
     <style>
         body { font-family: sans-serif; text-align: center; margin-top: 30px; background: #121212; color: #fff; }
-        .box { background: #1e1e1e; padding: 30px; border-radius: 12px; display: inline-block; box-shadow: 0 4px 20px rgba(0,0,0,0.5); }
-        input, button { margin: 10px; padding: 10px; font-size: 16px; }
-        button { background: #2ed573; color: white; border: none; cursor: pointer; border-radius: 6px; font-weight: bold; }
+        .box { background: #1e1e1e; padding: 30px; border-radius: 12px; display: inline-block; box-shadow: 0 4px 20px rgba(0,0,0,0.5); width: 400px; }
+        input[type="file"], input[type="range"] { margin: 10px 0; width: 100%; }
+        button { margin: 5px; padding: 10px 20px; font-size: 16px; background: #2ed573; color: white; border: none; cursor: pointer; border-radius: 6px; font-weight: bold; }
         button:hover { background: #7bed9f; }
-        #playerCanvas { background: black; border: 4px solid #333; margin-top: 20px; image-rendering: pixelated; }
-        #status { margin-top: 10px; color: #ffa502; }
+        .stop-btn { background: #ff4757 !important; }
+        .stop-btn:hover { background: #ff6b81 !important; }
+        #playerCanvas { background: black; border: 4px solid #333; margin-top: 20px; image-rendering: pixelated; width: 320px; height: 240px; }
+        #status { margin-top: 10px; color: #ffa502; font-size: 14px; }
+        .slider-container { background: #2a2a2a; padding: 15px; border-radius: 8px; margin-top: 15px; text-align: left; }
+        label { font-size: 14px; color: #ccc; }
     </style>
 </head>
 <body>
     <div class="box">
-        <h1>Bad Apple 再生プレイヤー</h1>
-        <p>変換した <code>bad_apple_data.txt</code> を選んで再生ボタンを押してね</p>
+        <h1>魔改造プレイヤー</h1>
+        <p>データファイルを選んで再生してね</p>
+        
         <input type="file" id="dataFile" accept=".txt"><br>
-        <button onclick="startPlayback()">再生</button>
-        <button onclick="stopPlayback()" style="background:#ff4757;">停止</button>
+        
+        <div>
+            <button onclick="startPlayback()">再生</button>
+            <button class="stop-btn" onclick="stopPlayback()">停止</button>
+        </div>
+
+        <div class="slider-container">
+            <label>再生スピード (FPS): <span id="fpsValue">10</span> fps</label>
+            <input type="range" id="fpsSlider" min="0.5" max="30" step="0.5" value="10" oninput="updateFps(this.value)">
+        </div>
+
         <div id="status">ファイル未選択</div>
-        <br>
-        <!-- 再生用の画面 (Canvas) -->
+        
+        <!-- 画面表示用Canvas (内部解像度は160x120) -->
         <canvas id="playerCanvas" width="160" height="120"></canvas>
     </div>
 
     <script>
         let frames = [];
         let currentFrame = 0;
-        let timer = null;
-        const width = 160;  // 変換時と同じ横幅
-        const height = 120; // 変換時と同じ縦幅
+        let isPlaying = false;
+        let lastTime = 0;
+        let accumulator = 0;
+        let currentFps = 10;
 
+        const width = 160;
+        const height = 120;
         const canvas = document.getElementById('playerCanvas');
         const ctx = canvas.getContext('2d');
         const statusDiv = document.getElementById('status');
+        const fpsValueSpan = document.getElementById('fpsValue');
 
-        // ファイルが選択されたら読み込む
+        // ファイル読み込み
         document.getElementById('dataFile').addEventListener('change', function(e) {
             const file = e.target.files[0];
             if (!file) return;
@@ -46,7 +64,6 @@
             const reader = new FileReader();
             reader.onload = function(event) {
                 const text = event.target.result;
-                // 改行区切りで1フレームごとの文字列に分割
                 frames = text.split('\n').filter(line => line.length > 0);
                 statusDiv.innerText = `読み込み完了！ (全 ${frames.length} フレーム)`;
                 currentFrame = 0;
@@ -55,7 +72,13 @@
             reader.readAsText(file);
         });
 
-        // 指定したフレーム番号を描画する関数
+        // スライダーでFPSを変更した時
+        function updateFps(val) {
+            currentFps = parseFloat(val);
+            fpsValueSpan.innerText = currentFps;
+        }
+
+        // 1フレームを描画する関数
         function drawFrame(index) {
             if (frames.length === 0 || index >= frames.length) return;
 
@@ -63,43 +86,62 @@
             const imgData = ctx.createImageData(width, height);
 
             for (let i = 0; i < frameData.length; i++) {
-                const val = frameData[i] === '1' ? 255 : 0; // '1'なら白、'0'なら黒
+                const char = frameData[i];
+                const level = parseInt(char, 10) || 0;
+                const val = Math.floor((level / 9) * 255); 
+
                 const p = i * 4;
                 imgData.data[p]     = val; // R
                 imgData.data[p + 1] = val; // G
                 imgData.data[p + 2] = val; // B
-                imgData.data[p + 3] = 255; // A (不透明)
+                imgData.data[p + 3] = 255; // A
             }
 
             ctx.putImageData(imgData, 0, 0);
-            statusDiv.innerText = `再生中: ${index + 1} / ${frames.length} フレーム`;
+            statusDiv.innerText = `再生中: ${index + 1} / ${frames.length} フレーム (${currentFps}fps)`;
         }
 
-        // 再生スタート
+        // デルタタイムを使った滑らかな高精度ループ（魔改造のキモ）
+        function loop(timestamp) {
+            if (!isPlaying) return;
+
+            if (!lastTime) lastTime = timestamp;
+            const deltaTime = (timestamp - lastTime) / 1000; // 経過秒数
+            lastTime = timestamp;
+
+            accumulator += deltaTime;
+            const frameInterval = 1 / currentFps;
+
+            // 経過時間に応じて進めるフレーム数を計算
+            while (accumulator >= frameInterval) {
+                accumulator -= frameInterval;
+                currentFrame++;
+                
+                if (currentFrame >= frames.length) {
+                    currentFrame = 0; // ループ
+                }
+                drawFrame(currentFrame);
+            }
+
+            requestAnimationFrame(loop);
+        }
+
         function startPlayback() {
             if (frames.length === 0) {
                 alert('先にテキストファイルを選んでください！');
                 return;
             }
-            stopPlayback(); // 2重再生防止
+            if (isPlaying) return; // 二重防止
 
-            // 1fps (1秒に1回) なら 1000ミリ秒。もし動画を30fpsとか細かく作った場合は 1000/30 に調整してね
-            const fps = 1; 
-            timer = setInterval(() => {
-                drawFrame(currentFrame);
-                currentFrame++;
-                if (currentFrame >= frames.length) {
-                    currentFrame = 0; // ループ再生
-                }
-            }, 1000 / fps);
+            isPlaying = true;
+            lastTime = 0;
+            accumulator = 0;
+            requestAnimationFrame(loop);
         }
 
-        // 停止
         function stopPlayback() {
-            if (timer) {
-                clearInterval(timer);
-                timer = null;
-            }
+            isPlaying = false;
+            statusDiv.innerText = "停止中";
         }
     </script>
 </body>
