@@ -2,25 +2,37 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <title>魔改造・スピード可変プレイヤー</title>
+    <title>レトロドット風・魔改造プレイヤー</title>
     <style>
-        body { font-family: sans-serif; text-align: center; margin-top: 30px; background: #121212; color: #fff; }
-        .box { background: #1e1e1e; padding: 30px; border-radius: 12px; display: inline-block; box-shadow: 0 4px 20px rgba(0,0,0,0.5); width: 400px; }
+        body { font-family: sans-serif; text-align: center; margin-top: 30px; background: #0b0b0b; color: #fff; }
+        .box { background: #161616; padding: 30px; border-radius: 12px; display: inline-block; box-shadow: 0 4px 20px rgba(0,0,0,0.8); border: 1px solid #333; }
         input[type="file"], input[type="range"] { margin: 10px 0; width: 100%; }
-        button { margin: 5px; padding: 10px 20px; font-size: 16px; background: #2ed573; color: white; border: none; cursor: pointer; border-radius: 6px; font-weight: bold; }
-        button:hover { background: #7bed9f; }
-        .stop-btn { background: #ff4757 !important; }
-        .stop-btn:hover { background: #ff6b81 !important; }
-        #playerCanvas { background: black; border: 4px solid #333; margin-top: 20px; image-rendering: pixelated; width: 320px; height: 240px; }
-        #status { margin-top: 10px; color: #ffa502; font-size: 14px; }
-        .slider-container { background: #2a2a2a; padding: 15px; border-radius: 8px; margin-top: 15px; text-align: left; }
-        label { font-size: 14px; color: #ccc; }
+        button { margin: 5px; padding: 10px 20px; font-size: 16px; background: #0984e3; color: white; border: none; cursor: pointer; border-radius: 6px; font-weight: bold; }
+        button:hover { background: #74b9ff; }
+        .stop-btn { background: #d63031 !important; }
+        .stop-btn:hover { background: #ff7675 !important; }
+        
+        /* 画面表示用Canvas (レトロな雰囲気を出すためにシャープに描画) */
+        #playerCanvas { 
+            background: #000; 
+            border: 6px solid #222; 
+            border-radius: 4px;
+            margin-top: 20px; 
+            width: 480px; 
+            height: 360px; 
+            image-rendering: pixelated;
+            image-rendering: crisp-edges;
+        }
+        
+        #status { margin-top: 10px; color: #00cec9; font-size: 14px; font-family: monospace; }
+        .slider-container { background: #222; padding: 15px; border-radius: 8px; margin-top: 15px; text-align: left; }
+        label { font-size: 14px; color: #bbb; }
     </style>
 </head>
 <body>
     <div class="box">
-        <h1>魔改造プレイヤー</h1>
-        <p>データファイルを選んで再生してね</p>
+        <h1>RETRO DOT PLAYER</h1>
+        <p>テキストデータを選んでレトロゲーム風に再生</p>
         
         <input type="file" id="dataFile" accept=".txt"><br>
         
@@ -36,7 +48,7 @@
 
         <div id="status">ファイル未選択</div>
         
-        <!-- 画面表示用Canvas (内部解像度は160x120) -->
+        <!-- 描画用Canvas（内部解像度を160x120にして、CSSで拡大） -->
         <canvas id="playerCanvas" width="160" height="120"></canvas>
     </div>
 
@@ -72,53 +84,62 @@
             reader.readAsText(file);
         });
 
-        // スライダーでFPSを変更した時
+        // スライダーでFPSを変更
         function updateFps(val) {
             currentFps = parseFloat(val);
             fpsValueSpan.innerText = currentFps;
         }
 
-        // 1フレームを描画する関数
+        // 1フレームを「すきま空きドット」風に描画する関数
         function drawFrame(index) {
             if (frames.length === 0 || index >= frames.length) return;
 
             const frameData = frames[index];
-            const imgData = ctx.createImageData(width, height);
+            
+            // 1. まず画面全体を完全に黒で塗りつぶす（これが隙間のベースになる）
+            ctx.fillStyle = '#000000';
+            ctx.fillRect(0, 0, width, height);
 
+            // 2. 1ドットずつ「少し小さめ」に四角を描画する
             for (let i = 0; i < frameData.length; i++) {
                 const char = frameData[i];
                 const level = parseInt(char, 10) || 0;
-                const val = Math.floor((level / 9) * 255); 
+                
+                // レベル0（完全に黒）は何もしない（隙間として黒を残す）
+                if (level === 0) continue;
 
-                const p = i * 4;
-                imgData.data[p]     = val; // R
-                imgData.data[p + 1] = val; // G
-                imgData.data[p + 2] = val; // B
-                imgData.data[p + 3] = 255; // A
+                const x = i % width;
+                const y = Math.floor(i / width);
+
+                // 濃淡（0〜9）を明度に変換（レベル1〜9を明るさに割り当て）
+                const val = Math.floor((level / 9) * 230) + 25; // 最小でも少し明るく
+                ctx.fillStyle = `rgb(${val}, ${val}, ${val})`;
+
+                // 【ここがポイント！】 1x1 のサイズではなく、少し縮めたサイズ（例: 0.8x0.8）で描画する
+                // これにより、ドットの周りにわずかな隙間が生まれ、レトロなグリッド感がでる
+                ctx.fillRect(x + 0.1, y + 0.1, 0.8, 0.8);
             }
 
-            ctx.putImageData(imgData, 0, 0);
-            statusDiv.innerText = `再生中: ${index + 1} / ${frames.length} フレーム (${currentFps}fps)`;
+            statusDiv.innerText = `PLAYING: ${index + 1} / ${frames.length} [${currentFps}fps]`;
         }
 
-        // デルタタイムを使った滑らかな高精度ループ（魔改造のキモ）
+        // デルタタイム制御のループ
         function loop(timestamp) {
             if (!isPlaying) return;
 
             if (!lastTime) lastTime = timestamp;
-            const deltaTime = (timestamp - lastTime) / 1000; // 経過秒数
+            const deltaTime = (timestamp - lastTime) / 1000;
             lastTime = timestamp;
 
             accumulator += deltaTime;
             const frameInterval = 1 / currentFps;
 
-            // 経過時間に応じて進めるフレーム数を計算
             while (accumulator >= frameInterval) {
                 accumulator -= frameInterval;
                 currentFrame++;
                 
                 if (currentFrame >= frames.length) {
-                    currentFrame = 0; // ループ
+                    currentFrame = 0;
                 }
                 drawFrame(currentFrame);
             }
@@ -131,7 +152,7 @@
                 alert('先にテキストファイルを選んでください！');
                 return;
             }
-            if (isPlaying) return; // 二重防止
+            if (isPlaying) return;
 
             isPlaying = true;
             lastTime = 0;
@@ -141,7 +162,7 @@
 
         function stopPlayback() {
             isPlaying = false;
-            statusDiv.innerText = "停止中";
+            statusDiv.innerText = "STOPPED";
         }
     </script>
 </body>
