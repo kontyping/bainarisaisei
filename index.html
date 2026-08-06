@@ -2,377 +2,383 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <title>レトロドット・プレイヤー ＆ 動画コンバーター（メモリ最適化版）</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>レトロドット・アニメーションプレイヤー</title>
     <style>
-        body { font-family: sans-serif; text-align: center; margin-top: 30px; background: #0b0b0b; color: #fff; }
-        .box { background: #161616; padding: 30px; border-radius: 12px; display: inline-block; box-shadow: 0 4px 20px rgba(0,0,0,0.8); border: 1px solid #333; max-width: 550px; width: 100%; box-sizing: border-box; }
-        input, button, select { margin: 10px 0; padding: 10px; font-size: 16px; width: 100%; box-sizing: border-box; }
-        button { background: #0984e3; color: white; border: none; cursor: pointer; border-radius: 6px; font-weight: bold; }
-        button:hover { background: #74b9ff; }
-        button.accent { background: #00b894; }
-        button.accent:hover { background: #55efc4; }
-        button:disabled { background: #555; cursor: not-allowed; }
-        
-        #playerCanvas { 
-            background: #000; 
-            border: 6px solid #222; 
-            border-radius: 4px;
-            margin-top: 15px; 
-            width: 320px; 
-            height: 240px; 
-            image-rendering: pixelated;
-            image-rendering: crisp-edges;
-            object-fit: contain;
+        body {
+            font-family: sans-serif;
+            text-align: center;
+            margin: 0;
+            padding: 20px;
+            background: #0b0b0b;
+            color: #fff;
         }
-        #playerCanvas:fullscreen {
+        .box {
+            background: #161616;
+            padding: 25px;
+            border-radius: 12px;
+            display: inline-block;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.8);
+            border: 1px solid #333;
+            max-width: 700px;
+            width: 100%;
+            box-sizing: border-box;
+        }
+        input, button, select {
+            margin: 8px 0;
+            padding: 10px;
+            font-size: 16px;
+            width: 100%;
+            box-sizing: border-box;
+        }
+        button {
+            background: #0984e3;
+            color: white;
+            border: none;
+            cursor: pointer;
+            border-radius: 6px;
+            font-weight: bold;
+        }
+        button:hover { background: #74b9ff; }
+        button.success { background: #00b894; }
+        button.success:hover { background: #55efc4; }
+        button.accent { background: #e17055; }
+        button.accent:hover { background: #fab1a0; }
+        button:disabled { background: #555; cursor: not-allowed; opacity: 0.6; }
+
+        .control-group {
+            text-align: left;
+            background: #222;
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 10px;
+        }
+        label { font-size: 14px; color: #bbb; display: block; margin-bottom: 5px; }
+
+        /* キャンバスとフルスクリーン対応のコンテナ */
+        #playerContainer {
+            position: relative;
+            background: #000;
+            border: 4px solid #333;
+            border-radius: 4px;
+            margin-top: 15px;
+            display: inline-block;
+            max-width: 100%;
+            overflow: hidden;
+        }
+        #playerContainer:fullscreen {
             width: 100vw;
             height: 100vh;
             border: none;
+            border-radius: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
             background: #000;
         }
-        
-        #status { margin-top: 10px; color: #fdcb6e; font-size: 14px; font-family: monospace; word-break: break-all; }
-        .control-group { text-align: left; background: #222; padding: 15px; border-radius: 8px; margin-top: 10px; }
-        label { font-size: 14px; color: #bbb; display: block; margin-bottom: 5px; }
-        audio { display: none; }
+        #renderCanvas {
+            display: block;
+            max-width: 100%;
+            height: auto;
+            image-rendering: pixelated;
+        }
+        #playerContainer:fullscreen #renderCanvas {
+            max-width: 100%;
+            max-height: 100%;
+            width: auto;
+            height: auto;
+            object-fit: contain;
+        }
+
+        #status {
+            margin-top: 10px;
+            color: #fdcb6e;
+            font-size: 14px;
+            font-family: monospace;
+            word-break: break-all;
+            min-height: 2em;
+        }
+
+        /* タイムライン・コントロール */
+        .timeline-box {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-top: 10px;
+        }
+        #timeSlider {
+            flex-grow: 1;
+            cursor: pointer;
+        }
     </style>
 </head>
 <body>
     <div class="box">
-        <h1>RETRO DOT PLAYER</h1>
-        <p>ドットテキスト ＆ MP3音声（メモリ最適化版）</p>
-        
+        <h1>DOT ANIMATION PLAYER</h1>
+        <p>テキストデータ再生プレイヤー</p>
+
         <div class="control-group">
-            <label>1. ドットテキストファイル (.txt):</label>
-            <input type="file" id="textFile" accept=".txt">
-            
-            <label>2. 音声ファイル (.mp3):</label>
+            <label>1. テキストデータ (.txt):</label>
+            <input type="file" id="txtFile" accept=".txt">
+
+            <label>2. 同時に抽出した音声 (.mp4 / .webm など ※任意):</label>
             <input type="file" id="audioFile" accept="audio/*">
 
-            <label>3. 再生フレームレート (FPS):</label>
+            <label>3. 横解像度 (抽出時と同じ値を設定):</label>
+            <select id="widthSelect">
+                <option value="160">160 px</option>
+                <option value="320">320 px</option>
+                <option value="640" selected>640 px (HD)</option>
+                <option value="1280">1280 px (WQHD)</option>
+                <option value="1920">1920 px (フルHD)</option>
+            </select>
+
+            <label>4. 再生FPS (抽出時と同じ値に設定):</label>
             <select id="fpsSelect">
-                <option value="1">1 fps</option>
                 <option value="5">5 fps</option>
                 <option value="10" selected>10 fps</option>
                 <option value="15">15 fps</option>
                 <option value="30">30 fps</option>
-                <option value="60">60 fps</option>
             </select>
         </div>
 
-        <button id="playBtn" onclick="playRetro()" class="accent" disabled>▶ 再生する</button>
-        <button onclick="toggleFullScreen()">⤢ フルスクリーンで見る</button>
-        <button id="exportBtn" onclick="exportToVideo()" disabled>💾 動画ファイルとして書き出し・ダウンロード</button>
-        
-        <div id="status">ファイルをすべて選択してください</div>
-        
-        <div>
-            <canvas id="playerCanvas" width="160" height="120"></canvas>
+        <div style="margin-top: 15px;">
+            <button id="playBtn" onclick="togglePlay()" class="success" disabled>▶ 再生 / 一時停止</button>
+            <button id="fsBtn" onclick="toggleFullScreen()" class="accent" disabled>🖥 フルスクリーンで再生</button>
         </div>
+
+        <div class="timeline-box">
+            <span id="timeDisplay" style="font-family: monospace; font-size: 12px;">00:00 / 00:00</span>
+            <input type="range" id="timeSlider" min="0" max="100" value="0" step="0.1" disabled>
+        </div>
+
+        <div id="status">テキストファイルを選択してください</div>
+
+        <!-- 描画エリア（フルスクリーン対象） -->
+        <div id="playerContainer">
+            <canvas id="renderCanvas" width="640" height="360"></canvas>
+        </div>
+
+        <!-- 音声再生用の隠しaudio要素 -->
+        <audio id="bgmAudio" preload="auto"></audio>
     </div>
 
-    <audio id="audioPlayer"></audio>
-
     <script>
-        const canvas = document.getElementById('playerCanvas');
-        const ctx = canvas.getContext('2d');
-        const audio = document.getElementById('audioPlayer');
-        const statusDiv = document.getElementById('status');
-        const playBtn = document.getElementById('playBtn');
-        const exportBtn = document.getElementById('exportBtn');
+        const txtFileInput   = document.getElementById('txtFile');
+        const audioFileInput = document.getElementById('audioFile');
+        const widthSelect    = document.getElementById('widthSelect');
+        const fpsSelect      = document.getElementById('fpsSelect');
+        const playBtn        = document.getElementById('playBtn');
+        const fsBtn          = document.getElementById('fsBtn');
+        const statusDiv      = document.getElementById('status');
+        const canvas         = document.getElementById('renderCanvas');
+        const ctx            = canvas.getContext('2d');
+        const playerContainer= document.getElementById('playerContainer');
+        const bgmAudio       = document.getElementById('bgmAudio');
+        const timeSlider     = document.getElementById('timeSlider');
+        const timeDisplay    = document.getElementById('timeDisplay');
 
-        // メモリクラッシュを防ぐため、ファイルを直接保持せずインデックス（行の開始位置・長さ）を管理
-        let fileHandle = null;
-        let lineOffsets = []; // 各行のテキストファイル内のバイト位置情報
-        let totalFrames = 0;
-        let width = 160;
-        let height = 120;
-        let isLoaded = false;
-        let animationId = null;
-        let audioCtx = null;
-        let audioSourceNode = null;
-        let audioDestNode = null;
+        let frames = [];          // 各フレームのテキストを保持する配列
+        let currentFrameIndex = 0;
+        let isPlaying = false;
+        let animationTimer = null;
+        let frameWidth = 640;
+        let frameHeight = 360;
+        let fps = 10;
+        let isUserSeeking = false;
 
-        // 大容量ファイルでも一括読み込みせず、インデックスを作成する（メモリ節約）
-        async function loadFiles() {
-            const textFile = document.getElementById('textFile').files[0];
-            const audioFile = document.getElementById('audioFile').files[0];
+        // --- ファイル読み込み処理 ---
+        txtFileInput.addEventListener('change', async (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
 
-            if (!textFile || !audioFile) return;
-
-            statusDiv.innerText = "テキストファイルを解析中 (メモリ最適化中)...";
+            statusDiv.innerText = 'テキストデータを読み込んで解析中...';
             playBtn.disabled = true;
-            exportBtn.disabled = true;
-
-            fileHandle = textFile;
-            lineOffsets = [];
-            totalFrames = 0;
+            fsBtn.disabled = true;
 
             try {
-                // ストリームを使って巨大なファイルでもメモリを圧迫せずにスキャン
-                const stream = textFile.stream();
-                const reader = stream.pipeThrough(new TextDecoderStream()).getReader();
+                const text = await file.text();
+                // 改行区切りでフレームに分割（空行は除外）
+                frames = text.split(/\r?\n/).filter(line => line.length > 0);
                 
-                let buffer = "";
-                let currentOffset = 0;
-                let firstLineLength = 0;
-
-                while (true) {
-                    const { value, done } = await reader.read();
-                    if (done) break;
-
-                    buffer += value;
-                    let lineEnd;
-                    while ((lineEnd = buffer.indexOf('\n')) >= 0) {
-                        let line = buffer.substring(0, lineEnd);
-                        // 改行コード(\r)の処理
-                        if (line.endsWith('\r')) line = line.slice(0, -1);
-                        
-                        const trimmed = line.trim();
-                        if (trimmed.length > 0) {
-                            if (totalFrames === 0) {
-                                firstLineLength = trimmed.length;
-                            }
-                            lineOffsets.push({ start: currentOffset, length: line.length + 1 });
-                            totalFrames++;
-                        }
-                        currentOffset += lineEnd + 1;
-                        buffer = buffer.substring(lineEnd + 1);
-                    }
-                }
-                // 最後の余り行の処理
-                if (buffer.trim().length > 0) {
-                    lineOffsets.push({ start: currentOffset, length: buffer.length });
-                    if (totalFrames === 0) firstLineLength = buffer.trim().length;
-                    totalFrames++;
+                if (frames.length === 0) {
+                    throw new Error('有効なデータが見つかりませんでした。');
                 }
 
-                if (totalFrames > 0) {
-                    if (firstLineLength === 19200) { 
-                        width = 160; height = 120; 
-                    } else if (firstLineLength === 76800) { 
-                        width = 320; height = 240; 
-                    } else if (firstLineLength === 230400) { 
-                        width = 640; height = 360; 
-                    } else if (firstLineLength === 921600) { 
-                        width = 1280; height = 720; 
-                    } else {
-                        width = 160;
-                        height = Math.ceil(firstLineLength / 160);
-                    }
-                    canvas.width = width;
-                    canvas.height = height;
-                }
+                frameWidth = parseInt(widthSelect.value);
+                // アスペクト比 16:9 から高さを自動計算
+                frameHeight = Math.round(frameWidth * 0.5625);
+                canvas.width = frameWidth;
+                canvas.height = frameHeight;
 
-                audio.src = URL.createObjectURL(audioFile);
-                isLoaded = true;
-                playBtn.disabled = false;
-                exportBtn.disabled = false;
-                
-                statusDiv.innerText = `準備完了！ (${width}x${height} / 全 ${totalFrames} フレーム)`;
-                
+                currentFrameIndex = 0;
+                timeSlider.max = frames.length - 1;
+                timeSlider.value = 0;
+                updateTimeDisplay();
+
                 // 最初のフレームを描画
-                await drawFrameAsync(0);
+                drawFrame(0);
 
+                statusDiv.innerText = `読み込み完了！ (総フレーム数: ${frames.length})。「再生」を押してください。`;
+                playBtn.disabled = false;
+                fsBtn.disabled = false;
+                timeSlider.disabled = false;
             } catch (err) {
-                console.error(err);
-                statusDiv.innerText = "エラー: ファイルの解析に失敗しました。";
+                statusDiv.innerText = 'エラー: ' + err.message;
             }
-        }
+        });
 
-        document.getElementById('textFile').addEventListener('change', loadFiles);
-        document.getElementById('audioFile').addEventListener('change', loadFiles);
+        // 音声ファイルのセットアップ
+        audioFileInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            const audioUrl = URL.createObjectURL(file);
+            bgmAudio.src = audioUrl;
+            statusDiv.innerText += ' (音声セット完了)';
+        });
 
-        // 指定したインデックスの行だけをファイルから部分読み込みして描画
-        async function getFrameLine(index) {
-            if (index < 0 || index >= lineOffsets.length) return null;
-            const info = lineOffsets[index];
-            const blob = fileHandle.slice(info.start, info.start + info.length);
-            const text = await blob.text();
-            return text.trim();
-        }
+        // 解像度やFPSが変更されたときの再計算
+        widthSelect.addEventListener('change', () => {
+            frameWidth = parseInt(widthSelect.value);
+            frameHeight = Math.round(frameWidth * 0.5625);
+            canvas.width = frameWidth;
+            canvas.height = frameHeight;
+            if (frames.length > 0) drawFrame(currentFrameIndex);
+        });
 
-        async function drawFrameAsync(frameIndex) {
-            const line = await getFrameLine(frameIndex);
-            if (!line) return;
+        fpsSelect.addEventListener('change', () => {
+            fps = parseFloat(fpsSelect.value);
+            if (isPlaying) {
+                stopAnimation();
+                startAnimation();
+            }
+        });
 
-            const imgData = ctx.createImageData(width, height);
+        // --- フレーム描画ロジック ---
+        function drawFrame(index) {
+            if (!frames[index]) return;
+            const line = frames[index];
+
+            // 1フレーム分の文字データをキャンバス（ピクセル）に展開
+            const imgData = ctx.createImageData(frameWidth, frameHeight);
             const data = imgData.data;
 
-            for (let i = 0; i < line.length; i++) {
-                if (i >= width * height) break;
-                
-                const val = parseInt(line[i], 10);
-                const idx = i * 4;
-
-                if (isNaN(val) || val === 0) {
-                    data[idx] = 0;     // R
-                    data[idx + 1] = 0; // G
-                    data[idx + 2] = 0; // B
-                    data[idx + 3] = 255; // A
-                } else {
-                    const colorVal = Math.floor((val / 9) * 230) + 25;
-                    data[idx] = colorVal;
-                    data[idx + 1] = colorVal;
-                    data[idx + 2] = colorVal;
-                    data[idx + 3] = 255;
+            for (let i = 0, p = 0; i < line.length && i < frameWidth * frameHeight; i++, p += 4) {
+                const charCode = line.charCodeAt(i);
+                // '0' (48) 〜 '9' (57) の数字を 0〜255 の輝度に変換
+                let val = 0;
+                if (charCode >= 48 && charCode <= 57) {
+                    val = Math.floor(((charCode - 48) / 9) * 255);
                 }
+                data[p]     = val; // R
+                data[p + 1] = val; // G
+                data[p + 2] = val; // B
+                data[p + 3] = 255; // A (不透明)
             }
             ctx.putImageData(imgData, 0, 0);
         }
 
-        function setupAudioContext() {
-            if (!audioCtx) {
-                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-                audioSourceNode = audioCtx.createMediaElementSource(audio);
-                audioDestNode = audioCtx.createMediaStreamDestination();
-                audioSourceNode.connect(audioDestNode);
-                audioSourceNode.connect(audioCtx.destination);
-            }
-            if (audioCtx.state === 'suspended') {
-                audioCtx.resume();
+        // --- 再生制御 ---
+        function togglePlay() {
+            if (frames.length === 0) return;
+            if (isPlaying) {
+                stopAnimation();
+            } else {
+                startAnimation();
             }
         }
 
-        function playRetro() {
-            if (!isLoaded) return;
+        function startAnimation() {
+            fps = parseFloat(fpsSelect.value);
+            const interval = 1000 / fps;
 
-            stopPlayback();
-            setupAudioContext();
+            isPlaying = true;
+            playBtn.innerText = '⏸ 一時停止';
 
-            const fps = parseFloat(document.getElementById('fpsSelect').value);
-
-            audio.currentTime = 0;
-            audio.play();
-
-            let lastFrameIndex = -1;
-
-            function update() {
-                if (audio.paused || audio.ended) {
-                    stopPlayback();
-                    return;
-                }
-
-                const currentTime = audio.currentTime;
-                const currentFrame = Math.floor(currentTime * fps);
-
-                if (currentFrame !== lastFrameIndex && currentFrame < totalFrames) {
-                    drawFrameAsync(currentFrame);
-                    lastFrameIndex = currentFrame;
-                }
-
-                if (currentFrame < totalFrames) {
-                    animationId = requestAnimationFrame(update);
-                } else {
-                    stopPlayback();
-                }
+            // 音声がある場合は一緒に再生
+            if (bgmAudio.src && bgmAudio.src !== window.location.href) {
+                // 現在のフレーム位置から音声の再生位置を合わせる
+                bgmAudio.currentTime = currentFrameIndex / fps;
+                bgmAudio.play().catch(e => console.log('音声再生ブロック:', e));
             }
 
-            animationId = requestAnimationFrame(update);
-            statusDiv.innerText = "再生中...";
+            let lastTime = performance.now();
+
+            function loop(now) {
+                if (!isPlaying) return;
+                const elapsed = now - lastTime;
+
+                if (elapsed >= interval) {
+                    lastTime = now - (elapsed % interval);
+                    
+                    if (currentFrameIndex >= frames.length) {
+                        // ループ再生（末尾到達時）
+                        currentFrameIndex = 0;
+                        if (bgmAudio.src && bgmAudio.src !== window.location.href) {
+                            bgmAudio.currentTime = 0;
+                        }
+                    }
+
+                    drawFrame(currentFrameIndex);
+                    timeSlider.value = currentFrameIndex;
+                    updateTimeDisplay();
+                    currentFrameIndex++;
+                }
+                animationTimer = requestAnimationFrame(loop);
+            }
+            animationTimer = requestAnimationFrame(loop);
         }
 
-        function stopPlayback() {
-            if (animationId) {
-                cancelAnimationFrame(animationId);
-                animationId = null;
+        function stopAnimation() {
+            isPlaying = false;
+            playBtn.innerText = '▶ 再生 / 一時停止';
+            if (animationTimer) {
+                cancelAnimationFrame(animationTimer);
+                animationTimer = null;
             }
-            if (!audio.paused) {
-                audio.pause();
+            if (bgmAudio.src && bgmAudio.src !== window.location.href) {
+                bgmAudio.pause();
             }
         }
 
+        // --- タイムライン操作 ---
+        timeSlider.addEventListener('input', (e) => {
+            isUserSeeking = true;
+            currentFrameIndex = parseInt(e.target.value);
+            drawFrame(currentFrameIndex);
+            updateTimeDisplay();
+            
+            if (bgmAudio.src && bgmAudio.src !== window.location.href) {
+                bgmAudio.currentTime = currentFrameIndex / parseFloat(fpsSelect.value);
+            }
+        });
+
+        timeSlider.addEventListener('change', () => {
+            isUserSeeking = false;
+        });
+
+        function updateTimeDisplay() {
+            const currentFps = parseFloat(fpsSelect.value);
+            const curSec = currentFrameIndex / currentFps;
+            const totalSec = frames.length / currentFps;
+            timeDisplay.innerText = `${formatTime(curSec)} / ${formatTime(totalSec)}`;
+        }
+
+        function formatTime(sec) {
+            const m = Math.floor(sec / 60).toString().padStart(2, '0');
+            const s = Math.floor(sec % 60).toString().padStart(2, '0');
+            return `${m}:${s}`;
+        }
+
+        // --- フルスクリーン対応 ---
         function toggleFullScreen() {
             if (!document.fullscreenElement) {
-                canvas.requestFullscreen().catch(err => alert(`エラー: ${err.message}`));
+                playerContainer.requestFullscreen().catch(err => {
+                    alert('フルスクリーンに失敗しました: ' + err.message);
+                });
             } else {
                 document.exitFullscreen();
             }
-        }
-
-        // 動画書き出し時のコマ落ち・ズレを防ぐため、awaitベースで全フレームを確実に描画する方式に変更
-        async function exportToVideo() {
-            if (!isLoaded) return;
-            if (!window.MediaRecorder) {
-                alert('お使いのブラウザは動画の書き出しに対応していません。');
-                return;
-            }
-
-            stopPlayback();
-            setupAudioContext();
-
-            statusDiv.innerText = "動画の書き出しを準備中...";
-
-            const fps = parseFloat(document.getElementById('fpsSelect').value);
-            const frameIntervalMs = 1000 / fps;
-
-            const canvasStream = canvas.captureStream(fps);
-            const combinedStream = new MediaStream([
-                ...canvasStream.getVideoTracks(),
-                ...audioDestNode.stream.getAudioTracks()
-            ]);
-
-            let mimeType = 'video/webm;codecs=vp9,opus';
-            if (!MediaRecorder.isTypeSupported(mimeType)) {
-                mimeType = 'video/webm';
-                if (!MediaRecorder.isTypeSupported(mimeType)) {
-                    mimeType = ''; 
-                }
-            }
-
-            let mediaRecorder;
-            try {
-                mediaRecorder = new MediaRecorder(combinedStream, mimeType ? { mimeType } : {});
-            } catch (e) {
-                mediaRecorder = new MediaRecorder(combinedStream);
-            }
-
-            const recordedChunks = [];
-            mediaRecorder.ondataavailable = (event) => {
-                if (event.data && event.data.size > 0) {
-                    recordedChunks.push(event.data);
-                }
-            };
-
-            mediaRecorder.onstop = () => {
-                const blob = new Blob(recordedChunks, { type: mediaRecorder.mimeType || 'video/webm' });
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.style.display = 'none';
-                a.href = url;
-                a.download = 'retro_dot_animation.webm';
-                document.body.appendChild(a);
-                a.click();
-                setTimeout(() => {
-                    document.body.removeChild(a);
-                    window.URL.revokeObjectURL(url);
-                }, 100);
-                statusDiv.innerText = "書き出しが完了しました！ダウンロードを開始します。";
-                playBtn.disabled = false;
-                exportBtn.disabled = false;
-            };
-
-            playBtn.disabled = true;
-            exportBtn.disabled = true;
-
-            mediaRecorder.start();
-            audio.currentTime = 0;
-            audio.play();
-
-            statusDiv.innerText = "動画を書き出し中...";
-
-            // フレームごとに確実に描画を待機させる（非同期ループ）
-            for (let i = 0; i < totalFrames; i++) {
-                if (audio.ended || audio.paused) break;
-                await drawFrameAsync(i);
-                // 正確なフレーム間隔を保つためのウェイト
-                await new Promise(resolve => setTimeout(resolve, frameIntervalMs));
-            }
-
-            if (mediaRecorder.state !== 'inactive') {
-                mediaRecorder.stop();
-            }
-            stopPlayback();
         }
     </script>
 </body>
