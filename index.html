@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>Bad Apple 再生プレイヤー</title>
+    <style>
+        body { font-family: sans-serif; text-align: center; margin-top: 30px; background: #121212; color: #fff; }
+        .box { background: #1e1e1e; padding: 30px; border-radius: 12px; display: inline-block; box-shadow: 0 4px 20px rgba(0,0,0,0.5); }
+        input, button { margin: 10px; padding: 10px; font-size: 16px; }
+        button { background: #2ed573; color: white; border: none; cursor: pointer; border-radius: 6px; font-weight: bold; }
+        button:hover { background: #7bed9f; }
+        #playerCanvas { background: black; border: 4px solid #333; margin-top: 20px; image-rendering: pixelated; }
+        #status { margin-top: 10px; color: #ffa502; }
+    </style>
+</head>
+<body>
+    <div class="box">
+        <h1>Bad Apple 再生プレイヤー</h1>
+        <p>変換した <code>bad_apple_data.txt</code> を選んで再生ボタンを押してね</p>
+        <input type="file" id="dataFile" accept=".txt"><br>
+        <button onclick="startPlayback()">再生</button>
+        <button onclick="stopPlayback()" style="background:#ff4757;">停止</button>
+        <div id="status">ファイル未選択</div>
+        <br>
+        <!-- 再生用の画面 (Canvas) -->
+        <canvas id="playerCanvas" width="160" height="120"></canvas>
+    </div>
+
+    <script>
+        let frames = [];
+        let currentFrame = 0;
+        let timer = null;
+        const width = 160;  // 変換時と同じ横幅
+        const height = 120; // 変換時と同じ縦幅
+
+        const canvas = document.getElementById('playerCanvas');
+        const ctx = canvas.getContext('2d');
+        const statusDiv = document.getElementById('status');
+
+        // ファイルが選択されたら読み込む
+        document.getElementById('dataFile').addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            statusDiv.innerText = "データを読み込んでいます...";
+            const reader = new FileReader();
+            reader.onload = function(event) {
+                const text = event.target.result;
+                // 改行区切りで1フレームごとの文字列に分割
+                frames = text.split('\n').filter(line => line.length > 0);
+                statusDiv.innerText = `読み込み完了！ (全 ${frames.length} フレーム)`;
+                currentFrame = 0;
+                drawFrame(0);
+            };
+            reader.readAsText(file);
+        });
+
+        // 指定したフレーム番号を描画する関数
+        function drawFrame(index) {
+            if (frames.length === 0 || index >= frames.length) return;
+
+            const frameData = frames[index];
+            const imgData = ctx.createImageData(width, height);
+
+            for (let i = 0; i < frameData.length; i++) {
+                const val = frameData[i] === '1' ? 255 : 0; // '1'なら白、'0'なら黒
+                const p = i * 4;
+                imgData.data[p]     = val; // R
+                imgData.data[p + 1] = val; // G
+                imgData.data[p + 2] = val; // B
+                imgData.data[p + 3] = 255; // A (不透明)
+            }
+
+            ctx.putImageData(imgData, 0, 0);
+            statusDiv.innerText = `再生中: ${index + 1} / ${frames.length} フレーム`;
+        }
+
+        // 再生スタート
+        function startPlayback() {
+            if (frames.length === 0) {
+                alert('先にテキストファイルを選んでください！');
+                return;
+            }
+            stopPlayback(); // 2重再生防止
+
+            // 1fps (1秒に1回) なら 1000ミリ秒。もし動画を30fpsとか細かく作った場合は 1000/30 に調整してね
+            const fps = 1; 
+            timer = setInterval(() => {
+                drawFrame(currentFrame);
+                currentFrame++;
+                if (currentFrame >= frames.length) {
+                    currentFrame = 0; // ループ再生
+                }
+            }, 1000 / fps);
+        }
+
+        // 停止
+        function stopPlayback() {
+            if (timer) {
+                clearInterval(timer);
+                timer = null;
+            }
+        }
+    </script>
+</body>
+</html>
